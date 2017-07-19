@@ -1,0 +1,82 @@
+{
+   "AWSTemplateFormatVersion":"2010-09-09",
+   "Description":"",
+   "Parameters" : {    
+    "AppID" : {      
+      "Type" : "String"
+    }    ,
+    "UserID" : {
+      "Type" : "String"
+    },
+    "DataClassification" : {
+      "Type" : "String"
+    },
+    "Role" : {
+      "Type" : "String"
+    }
+  },
+  "Mappings" : { 
+    "ImageMappings" : {
+      "us-east-1" : {"RHEL6" : "ami-1b1ebd11", "RHEL7" : "ami-ed1b2222"},
+      "us-west-2" : {"RHEL6" : "ami-cf888888", "RHEL7" : "ami-77777777"}
+    }
+  },
+   "Resources":{       
+      "EC2Instance":{
+         "Type":"AWS::EC2::Instance",
+         "Properties":{
+            "InstanceType": "t2.medium",                        
+            "ImageId": { "Fn::FindInMap" : [ "ImageMappings",{ "Ref" : "AWS::Region" }, "RHEL7"]},                                          
+            "SubnetId" : "subnet-38faaaaa",            
+            "Tags":[                              
+         {
+                  "Key":"UserID",
+                  "Value": { "Ref" : "UserID" }
+               },        
+               {
+                  "Key":"Vsad",
+                  "Value": { "Ref" : "AppID" }
+               },
+               {
+                  "Key":"Name",
+                  "Value": "CICD-Automation-Build"
+               },
+               {
+               	  "Key":"Role",
+               	  "Value":{ "Ref" : "Role" }
+               },
+               {
+               	  "Key":"DataClassification",
+               	  "Value": { "Ref" : "DataClassification" }
+               } 			   
+            ]
+         }
+      }
+   },
+   "Outputs":{
+      "InstanceId":{
+         "Description":"InstanceId of the newly created EC2 instance",
+         "Value":{
+            "Ref":"EC2Instance"
+         }
+      },
+      "AZ":{
+         "Description":"Availability Zone of the newly created EC2 instance",
+         "Value":{
+            "Fn::GetAtt":[
+               "EC2Instance",
+               "AvailabilityZone"
+            ]
+         }
+      },
+          "PrivateIP":{
+         "Description":"PrivateIP of the newly created EC2 instance",
+         "Value":{
+            "Fn::GetAtt":[
+               "EC2Instance",
+               "PrivateIp"
+            ]
+         }
+      }
+   }
+}

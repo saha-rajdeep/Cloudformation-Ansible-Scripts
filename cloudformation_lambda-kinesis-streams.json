@@ -1,0 +1,300 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+	"Description" : "CloudFormation Template for creating the Lambda function that gathers EC2 memory utilization and posts it to CloudHealth",
+	"Mappings" : {
+		"AccountMap" : {
+			"gts" : {
+				"acctNo" : "111111111111"
+			},
+			"wls" : {
+				"acctNo" : "230529777777"
+			},
+			"nts" : {
+				"acctNo" : "084444444444"
+			},
+			"ves" : {
+				"acctNo" : "759000000000"
+			}
+		},
+		"RegionMap" : {
+			"us-east-1" : {
+				"gts" : "gts-us-east-1",
+				"wls" : "wls-us-east-1",
+				"nts" : "nts-us-east-1",
+				"ves" : "ves-us-east-1"
+			},
+			"us-west-2" : {
+				"gts" : "gts-us-west-2",
+				"wls" : "wls-us-west-2",
+				"nts" : "nts-us-west-2",
+				"ves" : "ves-us-west-2"
+			}
+		},
+		"NetworkMap" : {
+			"gts-us-east-1" : {
+				"vpcId" : "vpc-f0ad8296",
+				"subnets" : ["subnet-7c999151", "subnet-a72c6ec2", "subnet-e8fdfab3"],
+				"sgs" : ["sg-6ddbb013", "sg-82dab1fc", "sg-e720aa98"]
+			},
+			"wls-us-east-1" : {
+				"vpcId" : "vpc-2c735f4a",
+				"subnets" : ["subnet-dcb24a94", "subnet-5136320a", "subnet-1f5a197a"],
+				"sgs" : ["sg-6429431a", "sg-8dd4bff3", "sg-0864ea77"]
+			},
+			"nts-us-east-1" : {
+				"vpcId" : "vpc-fa634f9c",
+				"subnets" : ["subnet-aa282cf1", "subnet-26bd456e", "subnet-d65013b3"],
+				"sgs" : ["sg-6645cb19", "sg-b7f69dc9", "sg-e3f49f9d"]
+			},
+			"ves-us-east-1" : {
+				"vpcId" : "vpc-37684451",
+				"subnets" : ["subnet-8141b8c9", "subnet-77440712", "subnet-93c2cbbe"],
+				"sgs" : ["sg-ab8ee5d5", "sg-5f83e821", "sg-8a911ff5"]
+			},
+			"gts-us-west-2" : {
+				"vpcId" : "vpc-f0ad8296",
+				"subnets" : ["subnet-10dabb77", "subnet-50358e19", "subnet-9b7964c3"],
+				"sgs" : ["sg-86bdcefd", "sg-88a0d3f3", "sg-64fe141f"]
+			},
+			"wls-us-west-2" : {
+				"vpcId" : "vpc-f7c48c90",
+				"subnets" : ["subnet-edfb9d8a", "subnet-e648f0af", "subnet-aa1705f2"],
+				"sgs" : ["sg-e6b9ca9d", "sg-0abac971", "sg-95c52cee"]
+			},
+			"nts-us-west-2" : {
+				"vpcId" : "vpc-01cc8466",
+				"subnets" : ["subnet-0beb8d6c", "subnet-d96e7c81", "subnet-795de530"],
+				"sgs" : ["sg-07b7c47c", "sg-0cb2c177", "sg-f9e20b82"]
+			},
+			"ves-us-west-2" : {
+				"vpcId" : "vpc-e0b3fb87",
+				"subnets" : ["subnet-5e6e7c06", "subnet-2d67df64", "subnet-8fe88ee8"],
+				"sgs" : ["sg-3144374a", "sg-684f3c13", "sg-a2e30ad9"]
+			}
+		}
+	},
+	"Parameters" : {
+		"Region" : {
+			"Type" : "String"
+		},
+		"Portfolio" : {
+			"Type" : "String"
+		},
+		"AppID" : {
+			"Type" : "String"
+		},
+		"UserID" : {
+			"Type" : "String"
+		},
+		"Role" : {
+			"Type" : "String"
+		},
+		"Bucket" : {
+			"Type" : "String"
+		}
+	},
+	"Resources" : {
+		"KinesisStream" : {
+			"Type" : "AWS::Kinesis::Stream",
+			"Properties" : {
+				"Name" : "vz-app-celv-cloudhealth",
+				"ShardCount" : 1,
+				"Tags" : [{
+						"Key" : "Vsad",
+						"Value" : {
+							"Ref" : "AppID"
+						}
+					}, {
+						"Key" : "Role",
+						"Value" : {
+							"Ref" : "Role"
+						}
+					}
+				]
+			}
+		},
+		"LambdaReceiver" : {
+			"Type" : "AWS::Lambda::Function",
+			"DependsOn" : "KinesisStream",
+			"Properties" : {
+				"Code" : {
+					"S3Bucket" : {
+						"Ref" : "Bucket"
+					},
+					"S3Key" : "vz-app-celv-chmem-gatherer.zip"
+				},
+				"Description" : "Timed event to grabs all EC2s in specific regions/VPCs and posting their IDs to a queue for memory gathering.",
+				"FunctionName" : "vz-app-celv-chmem-gatherer",
+				"Handler" : "lambda_function.lambda_handler",
+				"MemorySize" : 128,
+				"Role" : {
+					"Fn::Sub" : ["arn:aws:iam::${AccountNo}:role/Vz-ONEC2Role_R", {
+							"AccountNo" : {
+								"Fn::FindInMap" : ["AccountMap", {
+										"Ref" : "Portfolio"
+									}, "acctNo"]
+							}
+						}
+					]
+				},
+				"Runtime" : "python3.6",
+				"Timeout" : 120,
+				"VpcConfig" : {
+					"SecurityGroupIds" : {
+						"Fn::FindInMap" : ["NetworkMap", {
+								"Fn::FindInMap" : ["RegionMap", {
+										"Ref" : "Region"
+									}, {
+										"Ref" : "Portfolio"
+									}
+								]
+							}, "sgs"]
+					},
+					"SubnetIds" : {
+						"Fn::FindInMap" : ["NetworkMap", {
+								"Fn::FindInMap" : ["RegionMap", {
+										"Ref" : "Region"
+									}, {
+										"Ref" : "Portfolio"
+									}
+								]
+							}, "subnets"]
+					}
+				},
+				"Tags" : [{
+						"Key" : "Vsad",
+						"Value" : {
+							"Ref" : "AppID"
+						}
+					}, {
+						"Key" : "Role",
+						"Value" : {
+							"Ref" : "Role"
+						}
+					}
+				]
+			}
+		},
+		"LambdaProcessor" : {
+			"Type" : "AWS::Lambda::Function",
+			"DependsOn" : "LambdaReceiver",
+			"Properties" : {
+				"Code" : {
+					"S3Bucket" : {
+						"Ref" : "Bucket"
+					},
+					"S3Key" : "vz-app-celv-chmem-processor.zip"
+				},
+				"Description" : "Processes messages off SQS to get EC2 memory and post it to CloudHealth",
+				"FunctionName" : "vz-app-celv-chmem-processor",
+				"Handler" : "lambda_function.lambda_handler",
+				"MemorySize" : 128,
+				"Role" : {
+					"Fn::Sub" : ["arn:aws:iam::${AccountNo}:role/Vz-ONEC2Role_R", {
+							"AccountNo" : {
+								"Fn::FindInMap" : ["AccountMap", {
+										"Ref" : "Portfolio"
+									}, "acctNo"]
+							}
+						}
+					]
+				},
+				"Runtime" : "python3.6",
+				"Timeout" : 120,
+				"Environment" : {
+					"Variables" : {
+						"acctNo" : {
+							"Fn::FindInMap" : ["AccountMap", {
+									"Ref" : "Portfolio"
+								}, "acctNo"]
+						},
+						"apiEndpoint" : "https://chapi.cloudhealthtech.com/metrics/v1",
+						"apiKey" : "aaaaaaa-bbbb-cccc-dddd-000000000"
+					}
+				},
+				"VpcConfig" : {
+					"SecurityGroupIds" : {
+						"Fn::FindInMap" : ["NetworkMap", {
+								"Fn::FindInMap" : ["RegionMap", {
+										"Ref" : "Region"
+									}, {
+										"Ref" : "Portfolio"
+									}
+								]
+							}, "sgs"]
+					},
+					"SubnetIds" : {
+						"Fn::FindInMap" : ["NetworkMap", {
+								"Fn::FindInMap" : ["RegionMap", {
+										"Ref" : "Region"
+									}, {
+										"Ref" : "Portfolio"
+									}
+								]
+							}, "subnets"]
+					}
+				},
+				"Tags" : [{
+						"Key" : "Vsad",
+						"Value" : {
+							"Ref" : "AppID"
+						}
+					}, {
+						"Key" : "Role",
+						"Value" : {
+							"Ref" : "Role"
+						}
+					}
+				]
+			}
+		},
+		"AttachKinesis" : {
+			"Type" : "AWS::Lambda::EventSourceMapping",
+			"DependsOn" : "LambdaProcessor",
+			"Properties" : {
+				"BatchSize" : 50,
+				"Enabled" : true,
+				"EventSourceArn" : {
+					"Fn::GetAtt" : ["KinesisStream", "Arn"]
+				},
+				"FunctionName" : "vz-app-celv-chmem-processor",
+				"StartingPosition" : "TRIM_HORIZON"
+			}
+		},
+		"TimedEvent" : {
+			"Type" : "AWS::Events::Rule",
+			"DependsOn" : "AttachKinesis",
+			"Properties" : {
+				"Description" : "Triggers memory writes to CloudHealth every hour.",
+				"Name" : "vz-app-celv-cloudhealth",
+				"ScheduleExpression" : "rate(1 hour)",
+				"State" : "ENABLED",
+				"Targets" : [{
+						"Arn" : {
+							"Fn::GetAtt" : ["LambdaReceiver", "Arn"]
+						},
+						"Id" : "vz-app-celv-cwmem-gatherer",
+						"Input" : {
+							"Fn::Sub" : ["{ \"vpcId\" : \"${VPC}\", \"awsRegion\" : \"${REGION}\", \"streamName\" : \"vz-app-celv-cloudhealth\"}", {
+									"VPC" : {
+										"Fn::FindInMap" : ["NetworkMap", {
+												"Fn::FindInMap" : ["RegionMap", {
+														"Ref" : "Region"
+													}, {
+														"Ref" : "Portfolio"
+													}
+												]
+											}, "vpcId"]
+									},
+									"REGION" : {
+										"Ref" : "Region"
+									}
+								}
+							]
+						}
+					}
+				]
+			}
+		}
+	}
+}
